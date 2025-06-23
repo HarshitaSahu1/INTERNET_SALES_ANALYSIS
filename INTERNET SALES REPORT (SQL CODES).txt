@@ -1,0 +1,189 @@
+INTERNET SALES REPORT (SQL CODES)
+
+
+1) COMBINE THE TABLES
+select f.*,c.Date,c.Day,c.Month,c.MonthNo,c.Quarter,c.Year,cust.Customer_City,cust.DateFirstPurchase,cust.Full_Name,cust.Gender,p.Product_Category
+,p.Product_Color,p.Product_Description,p.Product_Line,p.Product_Model_Name,p.Product_Name,p.Product_Size,p.Product_Status,p.Sub_Category,p.ProductItemCode
+into combine_table  from FACT_InternetSales as f
+inner join DIM_Calendar as c
+on f.DueDateKey = c.DateKey
+inner join DIM_Customer as cust
+on f.CustomerKey = cust.CustomerKey
+inner join DIM_Product as p
+on f.ProductKey = p.ProductKey
+where c.Year in(2019,2020,2021) and left(f.OrderDateKey,4) in(2019,2020,2021) and left(cust.DateFirstPurchase,4) in(2019,2020)
+
+
+
+
+select * from combine_table
+
+
+2) 
+-----month wise sales 
+
+with rank as ( select month , sum(round(salesamount,3))as sales  from combine_table 
+group by month)
+select month,sales,rank() over(order by sales desc) as ranked from rank
+
+
+
+3) 
+----- orders on weekdays are more or on weekend and their respective sales 
+
+with sales_by_weekend_weekday as 
+(select *,case when datepart(weekday,orderdatekey) in (1,7) then 'Weekend'
+else 'Weekday'
+end as 'Day type' from combine_table)
+select round(sum(salesamount),2) as sales ,[day type],count(distinct orderdatekey)as order_count from sales_by_weekend_weekday
+group by [day type]
+order by order_count desc
+
+4) 
+----- year wise sales 
+with yearly_sales as (
+select *,datepart(year,orderdatekey) as years  from combine_table)
+select years , round(sum(salesamount),2)as sales  from yearly_sales
+group by years
+order by sales desc
+
+5)
+----most profitable product 
+select top 1 product_name ,round(sum(salesamount),3)as sales from combine_table
+group by Product_Name
+order by sales desc
+
+6) 
+
+----most profitable product_line 
+select top 1 product_line ,round(sum(salesamount),3)as sales from combine_table
+group by Product_line
+order by sales desc
+
+7)
+-----most profitable product per month whose sales is getting increasing every month 
+---sales by each product category and monthly ranking of thier sales ------
+with rapidly_increasing as(
+select monthno,product_category,round(sum(salesamount),2) as sales,[month] from combine_table
+group by MonthNo,Product_Category,Month
+)
+select monthno,product_category,rank()over(partition by product_category order by sales desc)as ranks,
+rank() over(order by sales desc) as rank,sales,[month] from rapidly_increasing
+
+8)
+---how much percentage the sales increasing and by how much percentage 
+with rapidly_increasing as(
+select monthno,product_category,round(sum(salesamount),2) as sales,[month] from combine_table
+group by MonthNo,Product_Category,Month
+),
+monthly_sales as (
+select monthno,product_category,
+rank() over(partition by product_category order by sales)as rank,sales,[month],
+row_number() over(partition by monthno order by sales desc) as no from rapidly_increasing
+)
+
+select *,lag(sales) over(partition by product_category order by monthno) as prev_sales,
+round((sales - lag(sales) over(partition by product_category order by monthno))*100
+/nullif(lag(sales) over(partition by product_category order by monthno),0),2) as percentage_change from monthly_sales
+order by no 
+
+9)
+
+----percentage_change_yearly wise ...
+with year_part as (
+select *,datepart(year,orderdatekey) as order_year  from combine_table),
+
+yearly_sales as(
+select order_year , round(sum(salesamount),2)as sales  from year_part
+group by order_year
+)
+select order_year, lag(sales)over(order by sales)as prev_year_sales,
+round((sales-lag(sales)over(order by sales)*100) / lag(sales)over(order by sales ),2)as sales from yearly_sales
+
+10)
+---- product_status and finding out why the status is current and for which category and of which line and why the status in outdated
+select distinct product_status from combine_table
+select * from combine_table
+
+with outdated_category as (
+select product_line,Product_Category,Product_Status,round(sum(salesamount),2) as sales  from combine_table
+where Product_Status = 'Outdate'
+group by product_line,Product_Category,Product_Status
+),
+Current_category as (
+select product_line,Product_Category,Product_Status,round(sum(salesamount),2) as sales  from combine_table
+where Product_Status = 'Current'
+group by  product_line,Product_Category,Product_Status
+)
+select * from(
+select coalesce(o.product_category,c.product_category) as product_category,
+coalesce(o.product_line,c.product_line) as product_line,coalesce(o.product_status,c.product_status) as product_status,c.sales as current_sale_product ,o.sales as oudated_sale_product
+from outdated_category as o
+full outer join  current_category as c 
+on o.product_category = c.product_category and o.product_line = c.product_line and o.product_status = c.product_status
+) as a
+group by a.product_status,a.product_category,a.product_line,a.current_sale_product,a.oudated_sale_product
+order by a.current_sale_product,a.oudated_sale_product desc;
+
+11) 
+
+---- which gender is purchasing more product 
+select count(*)as order_count,gender , round(sum(salesamount),2) as sales
+from combine_table
+--where gender = 'Male'and gender ='Female'
+group by gender
+order by sales desc
+
+12)
+---- new_customer , repeater
+select customerkey , 
+DATEDIFF(day,datefirstpurchase,max(orderdatekey))as active_days,
+case when
+DATEDIFF(day,datefirstpurchase,max(orderdatekey)) =0 then 'New_Customer'
+else 'Repeat'
+end as 'Customer_type'
+from combine_table
+group by datefirstpurchase,CustomerKey
+order by active_days 
+
+
+13)
+---- shipping-time delayed or early ??
+select duedatekey,shipdatekey, 
+case when datediff(DAY,duedatekey,shipdatekey ) <0 then 'on-time/ early'
+else 'delayed_order'
+end as 'shiping_timing' 
+from combine_table
+
+
+14) 
+
+--- CUSTOMER_LIFE_TIME minimum customer and max_lifetimedays ??
+select min(lifetime_days)as min_customer_lifetime_days ,max(lifetime_days) as max_customer_lifetime_days from (
+select Customerkey,min(orderdatekey) as min_date , max(orderdatekey) as max_date,
+datediff(day,min(orderdatekey), max(orderdatekey)) as lifetime_days from combine_table
+group by CustomerKey) as a
+
+15)
+
+---- frequency of orders 
+select customerkey,count(*)as count_orders from combine_table
+group by CustomerKey
+order by count_orders desc
+
+16)
+
+----- average_order_value per customers 
+select customerkey,count(*) as order_count , sum(salesamount) as total_sales , avg(salesamount) as avg_sales 
+from combine_table
+group by CustomerKey
+
+17)
+--- categorization of customer as loyal and likely chur customers 
+select customerkey, datediff(day,datefirstpurchase,max(orderdatekey))as dates_diff , 
+case when datediff(day,datefirstpurchase,max(orderdatekey))<7 then 'Likely_Churn'
+when datediff(day,datefirstpurchase,max(orderdatekey))>30 then 'Loyal_Customers'
+else 'Moderate'
+end  as 'Customer_Categorization'
+from combine_table
+group by CustomerKey,DateFirstPurchase
