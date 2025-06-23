@@ -7,6 +7,16 @@ This project analyzes internet sales performance across multiple dimensions such
 - SQL (for data querying and cleaning)
 - Power BI (for dashboards and data visualization)
 - Notepad (to save SQL scripts)
+- 
+## 📂 Raw Data Files
+
+The following raw datasets were used for analysis:
+DIM_CALENDAR.csv - It contains all the dates of transaction 
+DIM_Customer.csv - It contains all the demographics of a customers it city..
+DIM_Product.csv - It cotains all the realted data of a product its categories,sub_categories,product_status and many_more 
+FACT_InternetSales - It contains all the data related to sales 
+
+All files are available in the project folder and were used in SQL queries and Power BI dashboards.
 
 ## 🔍 Key SQL Queries
 
